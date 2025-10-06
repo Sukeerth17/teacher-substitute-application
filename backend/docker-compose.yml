@@ -1,0 +1,52 @@
+services:
+  # ------------------------------------
+  # 1. FastAPI Application Service (APP)
+  # ------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Map container port 8000 to host port 8000
+    ports:
+      - "8000:8000"
+    restart: always
+    environment:
+      # Database connection string (matching the 'db' service name and credentials)
+      DATABASE_URL: "postgresql://timetable_admin:secure_dev_pw@db:5432/timetables_db"
+    # Wait for the database service to be healthy before starting the app
+    depends_on:
+      db:
+        condition: service_healthy
+    # Mount the local directory for development (live code changes)
+
+  # ------------------------------------
+  # 2. PostgreSQL Database Service (DB)
+  # ------------------------------------
+  db:
+    image: postgres:15-alpine
+    # Map container port 5432 to host port 5434
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: timetables_db
+      # Must match the user used by DATABASE_URL above
+      POSTGRES_USER: timetable_admin
+      POSTGRES_PASSWORD: secure_dev_pw
+    # Store data persistently outside the container
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    # Healthcheck to confirm the DB is ready for the app to connect
+    healthcheck:
+      # Check DB readiness using the same user and DB name
+      test: ["CMD-SHELL", "pg_isready -U timetable_admin -d timetables_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: always
+
+# ------------------------------------
+# Docker Volumes (for persistent data)
+# ------------------------------------
+volumes:
+  postgres_data:
