@@ -56,9 +56,13 @@ async def upload_master_timetable(
     """
     # CRITICAL: Re-import UploadFile locally for validation and use
     from fastapi import UploadFile 
+
+    print("Received file:", getattr(file, "filename", None))
     
-    if not isinstance(file, UploadFile) or not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Invalid file provided. Please upload a CSV file.")
+    if not getattr(file, "filename", "").endswith(".csv"):
+     raise HTTPException(status_code=400, detail="Invalid file provided. Please upload a CSV file.")
+
+
     
     try:
         # 1. Read the file content
