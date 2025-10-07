@@ -1,17 +1,21 @@
-# Core Framework
+# Core Web Framework and Server
 fastapi==0.104.1
 uvicorn[standard]==0.24.0.post1
 
-# Database ORM and Models
+# Database ORM and PostgreSQL Driver
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
 
-# Data Handling (CSV, Workload Logic, Reports)
+# Data Handling (CSV Parsing, Manipulation, and Exports)
 pandas==2.1.3
-openpyxl  # Needed by pandas for reading/writing Excel files, useful for CSV backups
+openpyxl
+
+# Schema Validation and Typing (Pydantic v2)
+pydantic==2.5.3
+# Required for EmailStr type validation
+email-validator 
+# CRITICAL: Required for handling multipart/form-data file uploads
+python-multipart
 
 # Environment Variables
 python-dotenv==1.0.0
-
-# Schema Validation (used by FastAPI)
-pydantic==2.5.3

@@ -1,12 +1,12 @@
-# backend/main.py (NEW FILE CONTENT)
-
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
-# CORRECT ABSOLUTE IMPORTS
-import models  
-from database import engine, get_db 
+# Absolute imports for local files
+import models
+from database import engine, get_db
+# Import the timetable router
+from routers import timetable 
 
-# Create all tables in the database (this will run when FastAPI starts)
+# Create all tables in the database (runs on startup)
 models.Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI app
@@ -16,23 +16,26 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# --- Root Endpoint (Test) ---
+# Register the API routers
+app.include_router(timetable.router) 
+
+# --- Root Endpoint (Test & DB Status) ---
 @app.get("/")
 def read_root(db: Session = Depends(get_db)):
     """Simple check to ensure the service is running and connected to DB."""
     # Try to query a teacher to confirm DB connection
     try:
+        # Check if the Teacher table exists and can be queried
         teacher_count = db.query(models.Teacher).count()
         return {
-            "message": "API is running!",
-            "db_status": f"Connected, Teachers in DB: {teacher_count}"
+            "message": "Teacher Substitution API is running!",
+            "db_status": f"Connected successfully. Teacher count: {teacher_count}"
         }
     except Exception as e:
-        # Note: If the app starts but DB fails, we'll see this error.
-        # This means the Python code is running!
+        # Catch connection failure if the DB is still initializing
         return {
             "message": "API is running, but DB connection failed.",
-            "error": str(e)
+            "error": "Database error (check DB service logs)."
         }
         
 # --- Healthcheck Endpoint ---
