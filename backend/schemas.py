@@ -1,7 +1,5 @@
-# backend/schemas.py
-
 from pydantic import BaseModel, EmailStr, Field
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, List
 
 # --- 1. Teacher Schemas ---
@@ -21,19 +19,20 @@ class Teacher(TeacherBase):
     id: int
     sub_workload: int
     
-    class Config:
-        # Pydantic v2 requires model_config
-        from_attributes = True
+    # Configuration for SQLAlchemy ORM compatibility
+    model_config = {
+        "from_attributes": True
+    }
 
-# --- 2. Timetable Schemas ---
+# --- 2. Timetable Schemas (Data from CSV) ---
 
 class TimetableEntryBase(BaseModel):
-    """Base schema for a single timetable slot (used when parsing CSV)."""
-    day_of_week: str  # e.g., "Monday"
-    start_time: str   # e.g., "08:30"
-    end_time: str     # e.g., "09:10"
-    class_name: str   # e.g., "2A"
-    subject: str      # e.g., "English"
+    """Base schema for a single timetable slot."""
+    day_of_week: str
+    start_time: str
+    end_time: str
+    class_name: str
+    subject: str
     is_free: bool = False
 
 class TimetableEntry(TimetableEntryBase):
@@ -41,39 +40,63 @@ class TimetableEntry(TimetableEntryBase):
     id: int
     teacher_id: int
     
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True
+    }
 
-# --- 3. Absence/Busy Schemas ---
+# --- 3. Absence/Busy Schemas (Core Logic Input) ---
 
 class AbsenceCreate(BaseModel):
-    """Schema for marking a teacher absent or busy."""
-    teacher_email: EmailStr # Identify teacher via email for the API call
-    absence_date: date      # The date of absence
+    """Schema for marking a teacher absent or busy (detailed version, used internally)."""
+    teacher_email: EmailStr
+    absence_date: date
     start_time: str
     end_time: str
-    status: str = Field(..., pattern=r"^(Absent|Busy)$") # Enforces only 'Absent' or 'Busy'
-    reason: Optional[str] = None # Required if status is 'Busy'
+    status: str = Field(..., pattern=r"^(Absent|Busy)$")
+    reason: Optional[str] = None
 
-class AbsenceLog(AbsenceCreate):
+# New Simplified Input Schema (Used by /absence/report-day endpoint)
+class SimplifiedAbsenceInput(BaseModel):
+    """Schema for simplified admin input: only requires name and date."""
+    teacher_name: str
+    absence_date: date
+    status: str = 'Absent'
+    reason: str | None = None
+
+class AbsenceLog(BaseModel):
     """Schema for reading an absence log from the database."""
     id: int
     absent_teacher_id: int
+    date: date
+    status: str
     
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True
+    }
         
-# --- 4. Substitution Schemas ---
+# --- 4. Substitution History Schemas ---
 
 class SubstitutionHistory(BaseModel):
     """Schema for reading substitution history."""
     id: int
     absence_id: int
     substitute_id: int
-    substitute_name: Optional[str] = None
     class_name: str
     subject: str
-    timestamp: date
+    timestamp: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True
+    }
+    
+# --- 5. Auth Schemas (JWT) ---
+
+class Token(BaseModel):
+    """Schema for the JWT response."""
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    """Schema for the data payload inside the JWT."""
+    email: str | None = None
+    is_admin: bool = False

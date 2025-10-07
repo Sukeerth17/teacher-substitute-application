@@ -19,3 +19,8 @@ python-multipart
 
 # Environment Variables
 python-dotenv==1.0.0
+
+# Required for JWT handling and Google login
+python-jose[cryptography]
+# Required for password hashing (good practice, even if not using email/pass)
+passlib[bcrypt]
