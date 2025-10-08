@@ -6,6 +6,7 @@ from typing import List
 from database import get_db
 import models
 import schemas
+from utils import send_substitution_notification # Corrected import
 
 # --- Configuration Constants ---
 MAX_SUB_WORKLOAD_PER_WEEK = 5 
@@ -173,12 +174,25 @@ async def report_full_day_absence(
             substitute.sub_workload += 1
             record["substitute"] = substitute.name
             
+            # --- 7. Send Email Notification (Final Feature Integration) ---
+            notification_details = {
+                "date": data.absence_date.strftime('%Y-%m-%d'),
+                "day": absence_weekday,
+                "period": f"{class_entry.start_time}-{class_entry.end_time}",
+                "class_name": class_entry.class_name,
+                "subject": class_entry.subject,
+                "absent_name": absent_teacher.name,
+                "substitute_name": substitute.name,
+                "reason": data.reason,
+            }
+            send_substitution_notification(substitute.email, notification_details)
+            
         substitution_results.append(record)
 
     db.commit()
 
     return {
-        "message": f"Processed {len(scheduled_classes)} periods for {data.teacher_name}.",
+        "message": f"Processed {len(scheduled_classes)} periods for {data.teacher_name}. Notifications attempted.",
         "substitutions": substitution_results
     }
 
