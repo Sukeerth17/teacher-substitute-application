@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import date, datetime, time
-from typing import List
+from typing import List, Dict, Any
 
 from database import get_db
 import models
 import schemas
-from utils import send_substitution_notification # Corrected import
+from utils import send_substitution_notification # For email alerts
 
 # --- Configuration Constants ---
 MAX_SUB_WORKLOAD_PER_WEEK = 5 
@@ -16,8 +16,7 @@ router = APIRouter(
     tags=["Daily Operations"],
 )
 
-# --- Helper Function: Find Substitute (CORE LOGIC) ---
-
+# Helper function to find a substitute (CORE LOGIC)
 def find_substitute(
     db: Session, 
     absent_teacher: models.Teacher, 
@@ -86,7 +85,8 @@ def find_substitute(
     # 5. Fallback: No one is available under the specified criteria
     return None 
 
-# --- New Simplified Input Schema ---
+# --- Absence Reporting Endpoint (Simplified Input) ---
+
 class SimplifiedAbsenceInput(schemas.BaseModel):
     teacher_name: str
     absence_date: date
@@ -174,7 +174,7 @@ async def report_full_day_absence(
             substitute.sub_workload += 1
             record["substitute"] = substitute.name
             
-            # --- 7. Send Email Notification (Final Feature Integration) ---
+            # 7. Send Email Notification
             notification_details = {
                 "date": data.absence_date.strftime('%Y-%m-%d'),
                 "day": absence_weekday,
@@ -198,7 +198,45 @@ async def report_full_day_absence(
 
 
 @router.get("/workload", response_model=List[schemas.Teacher])
-async def get_teacher_workload(db: Session = Depends(get_db)):
+def get_teacher_workload(db: Session = Depends(get_db)):
     """Retrieves all teachers sorted by current substitution workload."""
     teachers = db.query(models.Teacher).order_by(models.Teacher.sub_workload).all()
     return teachers
+
+# --- New Endpoint: Get Substitution History for Reporting ---
+
+def get_detailed_history(db: Session) -> List[Dict[str, Any]]:
+    """Joins substitution and absence logs with teacher names for reporting."""
+    
+    # Base query for all history records
+    history_records = db.query(models.SubstitutionHistory).all()
+    
+    detailed_history = []
+    
+    # Build a dictionary to avoid N+1 queries for teacher names
+    teacher_map = {t.id: t.name for t in db.query(models.Teacher).all()}
+    
+    for record in history_records:
+        absence_log = db.query(models.AbsenceLog).filter(
+            models.AbsenceLog.id == record.absence_id
+        ).first()
+        
+        if absence_log:
+            detailed_history.append({
+                "date": absence_log.date.strftime("%Y-%m-%d"),
+                "time": f"{absence_log.start_time}-{absence_log.end_time}",
+                "absent_teacher": teacher_map.get(absence_log.absent_teacher_id, "Unknown"),
+                "substitute_teacher": teacher_map.get(record.substitute_id, "Unknown"),
+                "class_name": record.class_name,
+                "subject": record.subject,
+                "status": absence_log.status,
+                "reason": absence_log.reason if absence_log.reason else "N/A"
+            })
+            
+    return detailed_history
+
+
+@router.get("/history", response_model=List[Dict[str, Any]])
+def get_substitution_history(db: Session = Depends(get_db)):
+    """Retrieves the complete substitution and absence history."""
+    return get_detailed_history(db)
