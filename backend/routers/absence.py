@@ -11,12 +11,34 @@ from utils import send_substitution_notification # For email alerts
 # --- Configuration Constants ---
 MAX_SUB_WORKLOAD_PER_WEEK = 5 
 
+# Define core academic subjects vs co-curricular activities
+CORE_ACADEMIC_SUBJECTS = [
+    "English", "Maths", "Mathematics", "Science", "Social Studies",
+    "Hindi", "Computer Science", "EVS", "Physics", "Chemistry",
+    "Biology", "History", "Geography", "Economics", "Languages"
+]
+
+CO_CURRICULAR_SUBJECTS = [
+    "Co-Curricular", "Dance", "Art", "Music", "Karate", "Yoga",
+    "Swimming", "Sports", "Physical Education", "PE", "Drama",
+    "Theater", "Band", "Choir", "Craft"
+]
+
 router = APIRouter(
     prefix="/absence",
     tags=["Daily Operations"],
 )
 
-# Helper function to find a substitute (CORE LOGIC)
+# Helper function to check if a subject is core academic
+def is_core_subject(subject: str) -> bool:
+    """Returns True if the subject is a core academic subject."""
+    return subject in CORE_ACADEMIC_SUBJECTS
+
+def is_cocurricular_subject(subject: str) -> bool:
+    """Returns True if the subject is co-curricular."""
+    return subject in CO_CURRICULAR_SUBJECTS
+
+# Helper function to find a substitute (ENHANCED LOGIC WITH SUBJECT PRIORITY)
 def find_substitute(
     db: Session, 
     absent_teacher: models.Teacher, 
@@ -27,8 +49,19 @@ def find_substitute(
 ) -> models.Teacher | None:
     """
     Finds an available teacher based on priority:
-    1. Same subject, under workload limit.
-    2. Any teacher, under workload limit.
+    
+    FOR CORE ACADEMIC SUBJECTS (English, Maths, Science, etc.):
+    1. Same subject teacher, under workload limit
+    2. Other CORE subject teacher, under workload limit
+    3. Any teacher (including co-curricular), under workload limit
+    
+    FOR CO-CURRICULAR SUBJECTS (Dance, Art, Music, Karate, etc.):
+    1. Same co-curricular teacher, under workload limit
+    2. Other co-curricular teacher, under workload limit
+    3. Any teacher, under workload limit
+    
+    This ensures core subjects are prioritized and co-curricular teachers
+    cover co-curricular classes first.
     """
     
     # 1. Find all potential candidates (teachers NOT the absent one)
@@ -57,32 +90,108 @@ def find_substitute(
     # 3. Sort candidates by workload (lowest first)
     available_candidates.sort(key=lambda t: t.sub_workload)
     
-    # 4. Apply Priority Logic
+    # 4. Determine if this is a core or co-curricular subject
+    is_core = is_core_subject(subject)
+    is_cocurr = is_cocurricular_subject(subject)
     
-    # --- Priority 1: Same Subject & Under Workload Limit ---
-    same_subject_subs = [
-        t for t in available_candidates 
-        if t.sub_workload < MAX_SUB_WORKLOAD_PER_WEEK and 
-           # Check if the teacher is qualified (has ever taught this subject)
-           db.query(models.TimetableEntry).filter(
-               models.TimetableEntry.teacher_id == t.id,
-               models.TimetableEntry.subject == subject
-           ).first() is not None
-    ]
-    if same_subject_subs:
-        # Choose the one with the lowest current workload
-        return same_subject_subs[0] 
+    # 5. Apply Priority Logic Based on Subject Type
+    
+    if is_core:
+        # === FOR CORE ACADEMIC SUBJECTS ===
+        
+        # Priority 1: Same Subject Teacher (Core Academic)
+        same_subject_subs = [
+            t for t in available_candidates 
+            if t.sub_workload < MAX_SUB_WORKLOAD_PER_WEEK and 
+               db.query(models.TimetableEntry).filter(
+                   models.TimetableEntry.teacher_id == t.id,
+                   models.TimetableEntry.subject == subject
+               ).first() is not None
+        ]
+        if same_subject_subs:
+            return same_subject_subs[0]
+        
+        # Priority 2: Other Core Subject Teacher (but not co-curricular)
+        core_subject_teachers = [
+            t for t in available_candidates 
+            if t.sub_workload < MAX_SUB_WORKLOAD_PER_WEEK and
+               # Has taught at least one core subject
+               db.query(models.TimetableEntry).filter(
+                   models.TimetableEntry.teacher_id == t.id,
+                   models.TimetableEntry.subject.in_(CORE_ACADEMIC_SUBJECTS)
+               ).first() is not None
+        ]
+        if core_subject_teachers:
+            return core_subject_teachers[0]
+        
+        # Priority 3: Any available teacher under workload
+        any_available_subs = [
+            t for t in available_candidates 
+            if t.sub_workload < MAX_SUB_WORKLOAD_PER_WEEK
+        ]
+        if any_available_subs:
+            return any_available_subs[0]
+    
+    elif is_cocurr:
+        # === FOR CO-CURRICULAR SUBJECTS ===
+        
+        # Priority 1: Same Co-Curricular Subject Teacher
+        same_cocurr_subs = [
+            t for t in available_candidates 
+            if t.sub_workload < MAX_SUB_WORKLOAD_PER_WEEK and 
+               db.query(models.TimetableEntry).filter(
+                   models.TimetableEntry.teacher_id == t.id,
+                   models.TimetableEntry.subject == subject
+               ).first() is not None
+        ]
+        if same_cocurr_subs:
+            return same_cocurr_subs[0]
+        
+        # Priority 2: Other Co-Curricular Teacher
+        other_cocurr_teachers = [
+            t for t in available_candidates 
+            if t.sub_workload < MAX_SUB_WORKLOAD_PER_WEEK and
+               db.query(models.TimetableEntry).filter(
+                   models.TimetableEntry.teacher_id == t.id,
+                   models.TimetableEntry.subject.in_(CO_CURRICULAR_SUBJECTS)
+               ).first() is not None
+        ]
+        if other_cocurr_teachers:
+            return other_cocurr_teachers[0]
+        
+        # Priority 3: Any available teacher
+        any_available_subs = [
+            t for t in available_candidates 
+            if t.sub_workload < MAX_SUB_WORKLOAD_PER_WEEK
+        ]
+        if any_available_subs:
+            return any_available_subs[0]
+    
+    else:
+        # === FOR MISCELLANEOUS/UNCLASSIFIED SUBJECTS ===
+        # (Reading, or subjects not in either list)
+        
+        # Priority 1: Same subject teacher
+        same_subject_subs = [
+            t for t in available_candidates 
+            if t.sub_workload < MAX_SUB_WORKLOAD_PER_WEEK and 
+               db.query(models.TimetableEntry).filter(
+                   models.TimetableEntry.teacher_id == t.id,
+                   models.TimetableEntry.subject == subject
+               ).first() is not None
+        ]
+        if same_subject_subs:
+            return same_subject_subs[0]
+        
+        # Priority 2: Any available teacher
+        any_available_subs = [
+            t for t in available_candidates 
+            if t.sub_workload < MAX_SUB_WORKLOAD_PER_WEEK
+        ]
+        if any_available_subs:
+            return any_available_subs[0]
 
-    # --- Priority 2: Any Available Teacher & Under Workload Limit ---
-    any_available_subs = [
-        t for t in available_candidates 
-        if t.sub_workload < MAX_SUB_WORKLOAD_PER_WEEK
-    ]
-    if any_available_subs:
-        # Choose the one with the lowest current workload
-        return any_available_subs[0]
-
-    # 5. Fallback: No one is available under the specified criteria
+    # No suitable substitute found
     return None 
 
 # --- Absence Reporting Endpoint (Simplified Input) ---
@@ -142,7 +251,7 @@ async def report_full_day_absence(
         db.add(absence_log)
         db.flush() 
 
-        # 4. Find and Assign Substitute
+        # 4. Find and Assign Substitute (NOW WITH ENHANCED PRIORITY LOGIC)
         substitute = find_substitute(
             db=db,
             absent_teacher=absent_teacher,

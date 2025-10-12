@@ -1,10 +1,9 @@
 from fastapi import FastAPI, Depends
-# CRITICAL: Import CORS middleware for frontend connection
-from fastapi.middleware.cors import CORSMiddleware 
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import models
-# CRITICAL FIX: Import 'engine' directly for database initialization
-from database import engine, get_db 
+from database import engine, get_db
+import traceback
 
 # Create all tables in the database (runs on startup)
 models.Base.metadata.create_all(bind=engine)
@@ -16,7 +15,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# --- CRITICAL FIX: Add CORS Middleware for Frontend (Port 3000) ---
+# --- Add CORS Middleware for Frontend ---
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -29,25 +28,52 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 # ----------------------------------------
-
-
 # --- Router Imports and Registration ---
+print("=" * 60)
+print("LOADING ROUTERS...")
+print("=" * 60)
+
 try:
-    # Router imports must happen after the app object is created
-    from routers import timetable 
-    from routers import absence 
     from routers import auth
-    from routers import teacher
-
-    app.include_router(timetable.router) 
-    app.include_router(absence.router) 
+    print("✓ Auth router imported successfully")
     app.include_router(auth.router)
-    app.include_router(teacher.router)
+    print("✓ Auth router registered")
 except Exception as e:
-    # Log the error but allow the app to start
-    print(f"CRITICAL ROUTER LOAD FAILURE: {e}")
+    print(f"✗ FAILED to load auth router: {e}")
+    traceback.print_exc()
 
+try:
+    from routers import teacher
+    print("✓ Teacher router imported successfully")
+    app.include_router(teacher.router)
+    print("✓ Teacher router registered")
+except Exception as e:
+    print(f"✗ FAILED to load teacher router: {e}")
+    traceback.print_exc()
+
+try:
+    from routers import timetable
+    print("✓ Timetable router imported successfully")
+    app.include_router(timetable.router)
+    print("✓ Timetable router registered")
+except Exception as e:
+    print(f"✗ FAILED to load timetable router: {e}")
+    traceback.print_exc()
+
+try:
+    from routers import absence
+    print("✓ Absence router imported successfully")
+    app.include_router(absence.router)
+    print("✓ Absence router registered")
+except Exception as e:
+    print(f"✗ FAILED to load absence router: {e}")
+    traceback.print_exc()
+
+print("=" * 60)
+print("ROUTER LOADING COMPLETE")
+print("=" * 60)
 
 # --- Root Endpoint (Test & DB Status) ---
 @app.get("/")
@@ -62,9 +88,9 @@ def read_root(db: Session = Depends(get_db)):
     except Exception as e:
         return {
             "message": "API is running, but DB connection failed.",
-            "error": "Database error (check DB service logs)."
+            "error": str(e)
         }
-        
+
 # --- Healthcheck Endpoint ---
 @app.get("/health")
 def health_check():
